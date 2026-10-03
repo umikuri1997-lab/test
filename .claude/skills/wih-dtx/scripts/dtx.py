@@ -134,6 +134,31 @@ def build_room(r):
                "    0", f"{2 if r.get('living') else 3:5d}", ""])
 
 
+def inside(pt_, poly):
+    """点が多角形の内側か(レイキャスト)。"""
+    x, y = pt_
+    c = False
+    for i in range(len(poly)):
+        (x1, y1), (x2, y2) = poly[i], poly[(i + 1) % len(poly)]
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            c = not c
+    return c
+
+
+def orient_exterior(w, rooms):
+    """外壁は建物を反時計回りに回る向き(進む向きの左手が室内)にそろえる。
+    Walk in home は壁の向きで屋外側を判断するので、逆向きだと窓が外部扱いにならない。"""
+    (x1, y1), (x2, y2) = w["p1"], w["p2"]
+    L = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+    if L == 0:
+        return w
+    mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+    left = (mx - (y2 - y1) / L * 30, my + (x2 - x1) / L * 30)
+    if not any(inside(left, r["points"]) for r in rooms if r.get("floor", 1) == w.get("floor", 1)):
+        w = dict(w, p1=w["p2"], p2=w["p1"])
+    return w
+
+
 def build_wall(w, T):
     kind = w.get("kind", "normal")
     key = ("normal_out" if w.get("exterior") else "normal_in") if kind == "normal" else kind
@@ -196,7 +221,9 @@ def build(plan):
     data = {}
     data["BUKN"] = [[ints([3, 1]), "PLANS-x-x", plan.get("name", "")] + [""] * 9]
     data["HEYA"] = [build_room(r) for r in plan.get("rooms", [])]
-    data["KABE"] = [build_wall(w, T["tpl"]) for w in plan.get("walls", [])]
+    rooms = plan.get("rooms", [])
+    data["KABE"] = [build_wall(orient_exterior(w, rooms) if w.get("exterior") else w, T["tpl"])
+                    for w in plan.get("walls", [])]
     # 建具番号: 記号(AW/AD/WD/WF)ごとに出現順で 1, 2, 3 …
     counters, tate, last_combo = {}, [], 0
     for o in plan.get("fittings", []):
