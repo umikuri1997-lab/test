@@ -138,7 +138,31 @@ def chain(cuts, edge, off1=1365, off2=1820):
 dims = (chain([0, 3640, 6370, W], "bottom") + chain([0, 2730, 6370, 8190, W], "top")
         + chain([D, -6825, -4095, -2275, 0], "left") + chain([D, -4095, -3640, -1820, 0], "right"))
 
+# 家具・住宅設備(図面の位置から)。center は部品の中心、dir は部品の幅の向き(奥行きは dir の右側)。
+furniture = [
+    dict(symbol="浴室・洗面関連\\ﾎﾟﾘﾊﾞｽ1100.sym", corner=[9930, -780], dir=[-1, 0]),        # 浴槽
+    dict(symbol="家電\\冷蔵庫1.sym", corner=[3488.33, -2195], dir=[-1, 0]),                   # 冷蔵庫
+    dict(symbol="基本形状\\ﾎﾞｯｸｽ.sym", corner=[5380, -2195], dir=[-1, 0], size=[1740, 455, 850]),  # バックカウンター
+    dict(symbol="ｻﾎﾟｰﾄｻｲﾄ\\設備関連\\TOTO\\TOTO_GG.sym", corner=[7540, -80], dir=[1, 0]),   # 便器
+    dict(symbol="ｻﾎﾟｰﾄｻｲﾄ\\家電\\洗濯機1652.sym", center=[6750, -1416], dir=[1, 0]),          # 洗濯機(勝手口)
+    dict(symbol="家具関連\\Dﾃｰﾌﾞﾙ1423.sym", center=[1365, -2170], dir=[0, -1]),               # ダイニングテーブル
+    dict(symbol="家具関連\\Dﾁｪｱ1.sym", center=[910, -1860], dir=[0, 1]),
+    dict(symbol="家具関連\\Dﾁｪｱ1.sym", center=[910, -2480], dir=[0, 1]),
+    dict(symbol="家具関連\\Dﾁｪｱ1.sym", center=[1820, -1860], dir=[0, -1]),
+    dict(symbol="家具関連\\Dﾁｪｱ1.sym", center=[1820, -2480], dir=[0, -1]),
+    dict(symbol="ｵﾌｨｽﾌｧﾆﾁｬｰ\\応接ｲｽA3.sym", center=[1362, -7280], dir=[-1, 0]),             # ソファ(下の壁沿い)
+    dict(symbol="ｵﾌｨｽﾌｧﾆﾁｬｰ\\応接ｲｽA3.sym", center=[3160, -6195], dir=[0, -1]),             # ソファ(右側)
+    dict(symbol="家具関連\\Lﾃｰﾌﾞﾙ1804.sym", center=[1566, -6054], dir=[1, 0]),               # リビングテーブル
+]
+for o in furniture:
+    o["floor"] = 1
+equipment = [
+    dict(floor=1, type="kitchen", corner=[2810, -80], dir=[1, 0], width=2550),     # システムキッチン(上の壁沿い)
+    dict(floor=1, type="vanity", corner=[9930, -3560], dir=[-1, 0], width=1660),   # 洗面化粧台(2ボウル)
+]
+
 plan = dict(
+    furniture=furniture, equipment=equipment,
     name="1階平面図", rooms=rooms, walls=walls, fittings=fittings, dims=dims,
     outlines=[dict(floor=1, points=outline), dict(floor=2, points=rect(2730, -3185, 5460, -4095))],  # 2階側は階段の吹抜
     tatami=[dict(floor=1, points=rect(6370, -4095, W, D))],

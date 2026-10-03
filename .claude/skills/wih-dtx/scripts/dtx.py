@@ -6,6 +6,7 @@
   python3 dtx.py diff     A.dtx B.dtx         セクション単位の差分
   python3 dtx.py extract  FILE.dtx > plan.json  対応セクションを plan JSON に変換
   python3 dtx.py build    plan.json OUT.dtx   plan JSON から DTX を作る
+  python3 dtx.py symbols                      使える家具・設備部品の一覧(幅・奥行き・高さ・基準点)
 
 標準ライブラリのみ。ひな形は ../templates.json。
 """
@@ -199,6 +200,55 @@ def build_tate(o, T, number):
     return r
 
 
+def _dir(v):
+    L = (v[0] ** 2 + v[1] ** 2) ** 0.5
+    return v[0] / L, v[1] / L
+
+
+def build_inte(o, T):
+    """家具・設備部品 (INTE)。幅 W は dir の向き、奥行き D は dir の右側へ広がる。
+    部品の基準点は 2 行目 5・6 番目が 0,0 なら中心、それ以外は角(幅の始まり・奥行きの始まり)。
+    plan では center(中心) か corner(角) のどちらかで置く。size [W, D, H] で大きさを変えられる。"""
+    r = list(T["inte"][o["symbol"]])
+    v2 = nums(r[2])
+    if "size" in o:
+        v2[1:4] = o["size"]
+    W, D = v2[1], v2[2]
+    centered = v2[4] == 0 and v2[5] == 0
+    dx, dy = _dir(o.get("dir", [1, 0]))
+    rx, ry = dy, -dx                                   # dir の右側
+    if "pos" in o:                                     # 基準点そのもの(抽出時)
+        px, py = o["pos"]
+    elif "center" in o:
+        cx, cy = o["center"]
+        px, py = (cx, cy) if centered else (cx - dx * W / 2 - rx * D / 2, cy - dy * W / 2 - ry * D / 2)
+    else:
+        cx, cy = o["corner"]
+        px, py = (cx + dx * W / 2 + rx * D / 2, cy + dy * W / 2 + ry * D / 2) if centered else (cx, cy)
+    r[1] = set_ints(r[1], i0=o.get("floor", 1))
+    r[2] = "".join(f(x) for x in v2)
+    r[4] = f(px) + f(py) + f"{dx:10.6f}{dy:10.6f}"
+    if o["symbol"].startswith("基本形状"):            # 基本形状は外形の 4 点が実座標
+        a = (px + dx * W, py + dy * W)
+        r[5] = "".join(pt(q) for q in [a, (a[0] + rx * D, a[1] + ry * D), (px + rx * D, py + ry * D), (px, py)])
+    for i, line in o.get("raw", {}).items():
+        r[int(i)] = line
+    return r
+
+
+def build_setu(o, T):
+    """住宅設備 (SETU)。type: kitchen(システムキッチン) / vanity(洗面化粧台)。corner と dir の決まりは家具と同じ。"""
+    r = list(T["setu"][o["type"]])
+    r[1] = set_ints(r[1], i0=o.get("floor", 1))
+    if "width" in o:
+        r[2] = set_floats(r[2], i0=o["width"])
+    dx, dy = _dir(o.get("dir", [1, 0]))
+    r[4] = pt(o["corner"]) + f"{dx:10.6f}{dy:10.6f}"
+    for i, line in o.get("raw", {}).items():
+        r[int(i)] = line
+    return r
+
+
 def build_dim(dm, T):
     r = list(T["dim"])
     r[1] = ints([dm.get("floor", 1), 1, 0, 0, 0, dm["side"]])
@@ -287,6 +337,8 @@ def build(plan):
         r = r[:3] + [pt(p) for p in ccw(b["points"])] + r[-2:]
         byuk.append(r)
     data["BYUK"] = byuk
+    data["INTE"] = [build_inte(o, T["tpl"]) for o in plan.get("furniture", [])]
+    data["SETU"] = [build_setu(o, T["tpl"]) for o in plan.get("equipment", [])]
 
     for s in secs:
         if s[0] in data:
@@ -366,6 +418,31 @@ def extract(path):
     plan["stair_cuts"] = [{"floor": int(r[1]), "p1": nums(r[2])[0:2], "p2": nums(r[2])[2:4]} for r in R("KCUT")]
     plan["porches"] = [{"floor": int(r[1].split()[0]), "type": int(r[1].split()[2]), "height": nums(r[2])[1],
                         "points": [nums(x) for x in r[3:3 + int(r[1].split()[1])]]} for r in R("PORC")]
+    furn = []
+    for r in R("INTE"):
+        if len(r) != 16 or r[3] not in T["inte"]:
+            print(f"warning: 部品集にない家具 {r[3]} は飛ばします", file=sys.stderr)
+            continue
+        v2, v4 = nums(r[2]), nums(r[4])
+        o = {"floor": int(r[1].split()[0]), "symbol": r[3], "pos": v4[0:2], "dir": v4[2:4], "size": v2[1:4]}
+        built = build_inte(o, T)
+        raw = {str(i): r[i] for i in range(len(r)) if built[i] != r[i]}
+        if raw:
+            o["raw"] = raw
+        furn.append(o)
+    plan["furniture"] = furn
+    equip = []
+    kinds = {T["setu"][k][1].split()[1]: k for k in T["setu"]}
+    for r in R("SETU"):
+        v4 = nums(r[4])
+        o = {"floor": int(r[1].split()[0]), "type": kinds.get(r[1].split()[1], "kitchen"),
+             "width": nums(r[2])[0], "corner": v4[0:2], "dir": v4[2:4]}
+        built = build_setu(o, T)
+        raw = {str(i): r[i] for i in range(len(r)) if built[i] != r[i]}
+        if raw:
+            o["raw"] = raw
+        equip.append(o)
+    plan["equipment"] = equip
     plan["floor_parts"] = [{"floor": int(r[1].split()[0]), "level": nums(r[2])[0],
                             "points": [nums(x) for x in r[3:3 + int(r[1].split()[1])]]} for r in R("BYUK")]
     return plan
@@ -426,6 +503,11 @@ def main():
     elif cmd == "build":
         plan = json.load(open(args[0], encoding="utf-8"))
         write(args[1], *build(plan))
+    elif cmd == "symbols":
+        for k, r in sorted(load_templates()["tpl"]["inte"].items()):
+            v = nums(r[2])
+            anchor = "中心" if v[4] == 0 and v[5] == 0 else "角"
+            print(f"{k}\tW{v[1]:.0f} D{v[2]:.0f} H{v[3]:.0f} 床から{v[0]:.0f}\t基準点:{anchor}")
     else:
         print(__doc__)
 
