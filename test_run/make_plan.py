@@ -75,7 +75,9 @@ for s in sorted(segs):
         continue
     ext = on_outline(s) or (s[0][0] <= 0 and s[1][0] <= 0 and (s[0][0] < 0 or s[1][0] < 0))
     walls.append(dict(floor=1, kind="normal", exterior=ext, p1=list(s[0]), p2=list(s[1])))
-walls += [dict(floor=1, kind="hang", bottom=2000, p1=[6370, -1820], p2=[6370, -910]),
+walls += [dict(floor=1, kind="normal", exterior=False, p1=[3640, -8190], p2=[3640, -8645]),   # ポーチ袖壁
+          dict(floor=1, kind="normal", exterior=False, p1=[6370, -8190], p2=[6370, -8645]),
+          dict(floor=1, kind="hang", bottom=2000, p1=[6370, -1820], p2=[6370, -910]),
           dict(floor=1, kind="hang", bottom=2000, p1=[6370, -2730], p2=[6370, -1820]),
           dict(floor=1, kind="hang", bottom=2000, p1=[W, -4095], p2=[8190, -4095])]
 # 弓形出窓の外周も外壁
@@ -91,12 +93,17 @@ fittings = [
     F("window_slide", [3640, 0], [5460, 0], 1620, 600, 1850),                # H-1606 台所
     F("door_ext", [7280, 0], [6370, 0], 690, 2000, 2000, hinge=-1),          # WO-0720 勝手口
     F("window_vert", [7280, 0], [8190, 0], 405, 800, 1850, spec="型板"),      # T-0408 便所
-    F("window_slide", [9100, 0], [W, 0], 710, 800, 1850),                    # H-0708 浴室
-    F("window_vert", [W, -3185], [W, -3640], 405, 1000, 1850, spec="型板"),   # T-0410 洗面
+    F("window_slide", [8190, 0], [9100, 0], 710, 800, 1850),                 # H-0708 浴室
+    F("window_vert", [W, -3336.67], [W, -2730], 405, 1000, 1850, spec="型板"),  # T-0410 洗面
+    F("window_vert", [bow[1][0], bow[1][1]], [0, -910], 300, 1000, 2000),    # 弓形出窓 小窓(上)
+    F("window_vert", [bow[-2][0], bow[-2][1]], [0, -3640], 300, 1000, 2000, hinge=-1),  # 弓形出窓 小窓(下)
     F("window_slide", [W, -5005], [W, -6825], 1620, 1400, 1850),             # H-1614 和室
     F("window_slide", [7280, D], [9100, D], 1620, 1800, 1850),               # HK-1618 和室
     F("window_bay", [910, D], [2730, D], 1620, 1400, 1850, depth=400),       # BAY-1614 居間
-    F("window_slide", [0, -5005], [0, -6825], 1620, 2000, 2000),             # HK-1620 居間
+    F("combo_fix", [0, -6795], [0, -5713.75], 881.25, 1370, 2000,            # 居間 連窓 FIX + 縦滑り出し
+      combo=dict(p1=[0, -5035], p2=[0, -6795], top=2000, width=1760)),
+    F("combo_vert", [0, -5035], [0, -5713.75], 478.75, 1370, 2000,
+      combo=dict(p1=[0, -5035], p2=[0, -6795], top=2000, width=1760)),
     F("door_side", [5915, -7128], [4550, -7128], 1203, 2330, 2330, spec="玄関ﾄﾞｱ"),  # GE 1223
     # 室内
     F("opening_frame", [2730, -1668.33], [2730, -758.33], 820, 2000, 2000),  # 0820 台所 / 居間
@@ -133,12 +140,19 @@ dims = (chain([0, 3640, 6370, W], "bottom") + chain([0, 2730, 6370, 8190, W], "t
 
 plan = dict(
     name="1階平面図", rooms=rooms, walls=walls, fittings=fittings, dims=dims,
-    outlines=[dict(floor=1, points=outline)],
+    outlines=[dict(floor=1, points=outline), dict(floor=2, points=rect(2730, -3185, 5460, -4095))],  # 2階側は階段の吹抜
     tatami=[dict(floor=1, points=rect(6370, -4095, W, D))],
     bay_windows=[dict(floor=1, top=2000, height=1000, depth=455, p1=[2730, 0], p2=[910, 0])],
     agari=[dict(floor=1, p1=[4550, -5915], p2=[6370, -5915]), dict(floor=1, p1=[6370, -455], p2=[7280, -455])],
-    stairs=[dict(floor=1, steps=11, points=rect(3640, -3185, 5460, -4095))],
-    stair_cuts=[dict(floor=1, p1=[4550, -3185], p2=[4550, -4095])],
+    stairs=[dict(floor=1, steps=11, points=[[5460, -4095], [5460, -3185], [2730, -3185], [2730, -4095]])],
+    stair_cuts=[dict(floor=1, p1=[4095, -3185], p2=[4095, -4095])],
+    porches=[
+        dict(floor=1, type=1, points=[[3336.67, -9100], [6673.33, -9100], [6673.33, D], [6370, D],
+                                      [6370, -7128], [3640, -7128], [3640, D], [3336.67, D]]),   # 玄関ポーチ
+        dict(floor=1, type=2, points=rect(-80, -5005, -680, -6825)),        # 居間 掃出し前
+        dict(floor=1, type=2, points=rect(7280, -7815, 9100, -8415)),       # 和室 前
+        dict(floor=1, type=2, points=rect(6325, 0, 7325, 1000)),            # 勝手口 前
+    ],
     floor_parts=[dict(floor=1, level=-200, points=rect(6370, 0, 7280, -455))],
 )
 json.dump(plan, open("plan.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)

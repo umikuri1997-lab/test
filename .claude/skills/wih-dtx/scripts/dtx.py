@@ -102,6 +102,14 @@ def set_floats(line, **idx):
 
 
 # ---------------------------------------------------------------- 生成 ------
+def ccw(pts):
+    """多角形の点を反時計回り(Y 上向き)にそろえる。始点は変えない。
+    Walk in home は時計回りの部屋・畳・部分床・階段などを正しく扱えない。"""
+    a = sum(pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1]
+            for i in range(len(pts)))
+    return list(pts) if a >= 0 else [pts[0]] + list(reversed(pts[1:]))
+
+
 def load_templates():
     return json.load(open(os.path.join(HERE, "..", "templates.json"), encoding="utf-8"))
 
@@ -112,7 +120,7 @@ ROOM_CODES = {"玄関": 1, "廊下": 2, "和室": 3, "洋室": 4, "浴室": 6, "
 
 def build_room(r):
     """r: floor, name, code, points, label('tatami'|'none'|'blank'), living(bool), level, ceiling, extra"""
-    pts = r["points"]
+    pts = ccw(r["points"])
     level = r.get("level", -180.0 if r["code"] == 1 else 0.0)
     ceil = r.get("ceiling", 2400.0)
     p4 = r.get("p4", 0.0 if r["code"] in (1, 6) else 60.0)
@@ -143,6 +151,7 @@ TATE_DEFAULT_NAME = {
     "window_slide": "引違い窓", "window_vert": "縦滑り出し", "window_bay": "引違い窓(2枚)",
     "door_ext": "片開きﾄﾞｱ", "door_in": "片開きﾄﾞｱ", "fusuma": "引違い戸(2枚)",
     "sliding_in": "引違い戸(2枚)", "opening_frame": "開口枠", "door_side": "片開きﾄﾞｱ(片袖)",
+    "combo_fix": "FIX窓", "combo_vert": "縦滑り出し",
 }
 
 
@@ -157,6 +166,9 @@ def build_tate(o, T, number):
         r[12] = set_ints(r[12], i4=number)
     if o.get("spec"):                       # 仕様メモ(玄関ﾄﾞｱ・型板・透明 など)
         r[20] = o["spec"]
+    if o["kind"] in ("combo_fix", "combo_vert") and "combo" in o:   # 連窓: 全体の範囲
+        c = o["combo"]
+        r[47] = pt(c["p1"]) + pt(c["p2"]) + f(c["top"]) + f(c["width"] if o["kind"] == "combo_fix" else 0) + f(0)
     for i, line in o.get("raw", {}).items():  # 上記以外の行をそのまま指定(抽出時の差分保存用)
         r[int(i)] = line
     return r
@@ -186,24 +198,35 @@ def build(plan):
     data["HEYA"] = [build_room(r) for r in plan.get("rooms", [])]
     data["KABE"] = [build_wall(w, T["tpl"]) for w in plan.get("walls", [])]
     # 建具番号: 記号(AW/AD/WD/WF)ごとに出現順で 1, 2, 3 …
-    counters, tate = {}, []
+    counters, tate, last_combo = {}, [], 0
     for o in plan.get("fittings", []):
         sym = T["tpl"]["tate"][o["kind"]][13]
         if o.get("number") is not None:
             num = o["number"]
+        elif o["kind"] == "combo_vert":              # 連窓の 2 枚目は FIX と同じ番号のマイナス
+            num = -last_combo
         else:
             counters[sym] = counters.get(sym, 0) + 1
             num = counters[sym]
+        if o["kind"] == "combo_fix":
+            last_combo = abs(num)
         tate.append(build_tate(o, T["tpl"], num))
     data["TATE"] = tate
     data["SUNP"] = [build_dim(dm, T["tpl"]) for dm in plan.get("dims", [])]
-    data["GAIS"] = [[SEP, ints([g.get("floor", 1), len(g["points"])])] + [pt(p) for p in g["points"]]
+    data["GAIS"] = [[SEP, ints([g.get("floor", 1), len(g["points"])])] + [pt(p) for p in ccw(g["points"])]
                     for g in plan.get("outlines", [])]
+    porc = []
+    for q in plan.get("porches", []):
+        r = list(T["tpl"]["porc"])
+        r[1] = ints([q.get("floor", 1), len(q["points"]), q.get("type", 2), 1, 1, 0])
+        r[2] = set_floats(r[2], i1=q.get("height", 150))
+        porc.append(r[:3] + [pt(p) for p in ccw(q["points"])] + r[-2:])
+    data["PORC"] = porc
     tata = []
     for t in plan.get("tatami", []):
         r = list(T["tpl"]["tata"])
         r[1] = ints([t.get("floor", 1), len(t["points"])] + [int(v) for v in r[1].split()[2:]])
-        tata.append(r[:2] + [pt(p) for p in t["points"]] + [r[-1]])
+        tata.append(r[:2] + [pt(p) for p in ccw(t["points"])] + [r[-1]])
     data["TATA"] = tata
     zdem = []
     for z in plan.get("bay_windows", []):
@@ -225,7 +248,7 @@ def build(plan):
         r = list(T["tpl"]["kaid"])
         r[1] = set_ints(r[1], i0=k.get("floor", 1))
         r[3] = ints([1, k.get("steps", 11), len(k["points"]), 0, 0])
-        r = r[:4] + [pt(p) for p in k["points"]] + r[8:]
+        r = r[:4] + [pt(p) for p in ccw(k["points"])] + r[8:]
         kaid.append(r)
     data["KAID"] = kaid
     data["KCUT"] = [[SEP, f"{c.get('floor', 1):5d}", pt(c["p1"]) + pt(c["p2"])] for c in plan.get("stair_cuts", [])]
@@ -234,7 +257,7 @@ def build(plan):
         r = list(T["tpl"]["byuk"])
         r[1] = set_ints(r[1], i0=b.get("floor", 1), i1=len(b["points"]))
         r[2] = set_floats(r[2], i0=b.get("level", -200))
-        r = r[:3] + [pt(p) for p in b["points"]] + r[-2:]
+        r = r[:3] + [pt(p) for p in ccw(b["points"])] + r[-2:]
         byuk.append(r)
     data["BYUK"] = byuk
 
@@ -295,6 +318,9 @@ def extract(path):
             o["depth"] = v2[2]
         if len(r) > 20 and r[20]:
             o["spec"] = r[20]
+        if kind in ("combo_fix", "combo_vert"):
+            v = nums(r[47])
+            o["combo"] = {"p1": v[0:2], "p2": v[2:4], "top": v[4], "width": v[5]}
         built = build_tate(o, {"tate": T["tate"]}, o["number"])
         raw = {str(i): r[i] for i in range(len(r)) if built[i] != r[i]}
         if raw:
@@ -311,6 +337,8 @@ def extract(path):
     plan["stairs"] = [{"floor": int(r[1].split()[0]), "steps": int(r[3].split()[1]),
                        "points": [nums(x) for x in r[4:4 + int(r[3].split()[2])]]} for r in R("KAID")]
     plan["stair_cuts"] = [{"floor": int(r[1]), "p1": nums(r[2])[0:2], "p2": nums(r[2])[2:4]} for r in R("KCUT")]
+    plan["porches"] = [{"floor": int(r[1].split()[0]), "type": int(r[1].split()[2]), "height": nums(r[2])[1],
+                        "points": [nums(x) for x in r[3:3 + int(r[1].split()[1])]]} for r in R("PORC")]
     plan["floor_parts"] = [{"floor": int(r[1].split()[0]), "level": nums(r[2])[0],
                             "points": [nums(x) for x in r[3:3 + int(r[1].split()[1])]]} for r in R("BYUK")]
     return plan
